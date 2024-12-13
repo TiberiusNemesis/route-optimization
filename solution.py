@@ -1,5 +1,6 @@
 import numpy as np
 from typing import List, Tuple
+import matplotlib.pyplot as plt
 
 class RouteOptimizer:
     """
@@ -68,8 +69,30 @@ def read_coordinates(filename: str) -> List[Tuple[float, float]]:
             coordinates.append((x, y))
     return coordinates
 
+def visualize_route(coordinates: List[Tuple[float, float]], route: List[int]):
+    """
+    A visual representation of the route through matplotlib.
+    """
+
+    x_coords = [coordinates[i][0] for i in route]
+    y_coords = [coordinates[i][1] for i in route]
+    
+    plt.figure(figsize=(10, 6))
+    plt.plot(x_coords, y_coords, marker='o', linestyle='-', color='blue', label='Route')
+    
+    for i, (x, y) in enumerate(coordinates):
+        plt.text(x, y, str(i), fontsize=12, ha='right')
+    
+    plt.xlabel('Longitude')
+    plt.ylabel('Latitude')
+    plt.title('Optimized Route Visualization')
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+
 if __name__ == '__main__':
     coordinates = read_coordinates('delivery_points.txt')
     optimizer = RouteOptimizer(coordinates)
     route, distance = optimizer.find_route()
     print(f"ROUTE\n{route}\n\nDISTANCE\n{distance}")
+    visualize_route(coordinates, route)
