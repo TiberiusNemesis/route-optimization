@@ -70,7 +70,7 @@ class TestRouteOptimizer(unittest.TestCase):
             Location(0, 0),
             Location(
                 0, 1,
-                time_window_start=self.start_time,
+                time_window_start=self.start_time, # + timedelta(hours=1)
                 time_window_end=self.start_time + timedelta(hours=2)
             )
         ]
