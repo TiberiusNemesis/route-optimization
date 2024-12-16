@@ -1,29 +1,30 @@
 import unittest
 import numpy as np
-from datetime import datetime, timedelta
+from decimal import Decimal
 from solution import (
     RouteOptimizer,
     Location,
-    RouteValidationError,
     NearestNeighborStrategy,
     TwoOptStrategy
 )
 
 class TestRouteOptimizer(unittest.TestCase):
     def setUp(self):
+        """
+        Create a simple square of locations for testing.
+        """
         self.square_locs = [
             Location(0, 0),
             Location(0, 1),
             Location(1, 1),
             Location(1, 0)
         ]
-        self.start_time = datetime(2024, 12, 14, 8, 0)
-        self.optimizer = RouteOptimizer(
-            self.square_locs,
-            start_time=self.start_time
-        )
+        self.optimizer = RouteOptimizer(self.square_locs)
         
     def test_distance_matrix(self):
+        """
+        Test if the distance matrix is calculated correctly.
+        """
         expected = np.array([
             [0, 1, np.sqrt(2), 1],
             [1, 0, 1, np.sqrt(2)],
@@ -37,128 +38,85 @@ class TestRouteOptimizer(unittest.TestCase):
         )
     
     def test_route_completion(self):
-        route, times, distance = self.optimizer.find_route()
+        """
+        Test if the route is complete, i.e.
+        - It starts and ends at the same point
+        - It visits all locations exactly once
+        """
+        route, distance = self.optimizer.find_route()
+        
         
         self.assertEqual(route[0], route[-1])
         
-        route_set = set(route[:-1])  # Exclude the return to start
+        route_set = set(route[:-1])  # this is to exclude the start from the "have all locations been visited" check
         self.assertEqual(len(route_set), len(self.square_locs))
         self.assertEqual(route_set, set(range(len(self.square_locs))))
     
     def test_route_distance(self):
-        route, times, total_distance = self.optimizer.find_route()
-        manual_distance = 0
-        for i in range(len(route) - 1):
-            manual_distance += self.optimizer.distances[route[i]][route[i + 1]]
+        """
+        Test if the reported total distance matches manual calculation.
+        """
+        route, total_distance = self.optimizer.find_route()
         
-        self.assertAlmostEqual(total_distance, manual_distance)
+        manual_distance = Decimal('0')
+        for i in range(len(route) - 1):
+            manual_distance += Decimal(str(self.optimizer.distances[route[i]][route[i + 1]]))
+        
+        self.assertAlmostEqual(float(total_distance), float(manual_distance))
     
     def test_single_location(self):
-        optimizer = RouteOptimizer(
-            [Location(0, 0)],
-            start_time=self.start_time
-        )
-        route, times, distance = optimizer.find_route()
+        """
+        Test handling of a single location case.
+        Should return a simple out-and-back route with zero distance.
+        """
+        optimizer = RouteOptimizer([Location(0, 0)])
+        route, distance = optimizer.find_route()
         self.assertEqual(route, [0, 0])
         self.assertEqual(distance, 0)
-        
-    def test_time_window_constraints(self):
-        # Interestingly while running this test I realized that I hadn't considered letting
-        # the PE wait for the next location. This is a problem. This test will fail as it is.
-        # I'm going to sleep on it as it's 2 AM right now.
-        locations = [
-            Location(0, 0),
-            Location(
-                0, 1,
-                time_window_start=self.start_time, # + timedelta(hours=1)
-                time_window_end=self.start_time + timedelta(hours=2)
-            )
-        ]
-        
-        optimizer = RouteOptimizer(locations, start_time=self.start_time)
-        route, times, distance = optimizer.find_route()
-        
-        self.assertTrue(
-            locations[1].time_window_start <= times[1] <= locations[1].time_window_end
-        )
 
     def test_strategy_swap(self):
-        _, _, initial_distance = self.optimizer.find_route()
+        """
+        Test if swapping strategies works correctly.
+        2-opt should never be worse than nearest neighbor alone.
+        """
+        _, initial_distance = self.optimizer.find_route()
         
         # we switch to just nearest neighbor without 2-opt
         self.optimizer.set_strategy(NearestNeighborStrategy())
-        _, _, nn_distance = self.optimizer.find_route()
+        _, nn_distance = self.optimizer.find_route()
         
         # 2-opt strategy should never be worse than nearest neighbor
         self.assertLessEqual(initial_distance, nn_distance)
 
-    def test_priority_routing(self):
-        locations = [
-            Location(0, 0),
-            Location(0, 1, priority=2),
-            Location(0, 2, priority=1)
-        ]
-        
-        optimizer = RouteOptimizer(
-            locations,
-            start_time=self.start_time,
-            strategy=NearestNeighborStrategy()
-        )
-        route, _, _ = optimizer.find_route()
-        
-        high_priority_index = route.index(1)
-        normal_priority_index = route.index(2)
-        self.assertLess(high_priority_index, normal_priority_index)
-
-    def test_service_duration(self):
-        locations = [
-            Location(0, 0, service_time_minutes=30),
-            Location(0, 1, service_time_minutes=60)
-        ]
-        
-        optimizer = RouteOptimizer(locations, start_time=self.start_time)
-        _, times, _ = optimizer.find_route()
-        
-        time_diff = times[2] - times[0]
-        self.assertGreaterEqual(
-            time_diff,
-            timedelta(minutes=90)  # 30 + 60 minutes service time
-        )
-
-    def test_max_route_duration(self):
-        locations = [
-            Location(0, 0),
-            Location(100, 100)
-        ]
-        
-        optimizer = RouteOptimizer(
-            locations,
-            start_time=self.start_time,
-            max_route_duration=timedelta(minutes=1)
-        )
-        
-        with self.assertRaises(RouteValidationError):
-            optimizer.find_route()
-
     def test_two_opt_improvement(self):
+        """
+        Test if 2-opt can improve on a sub-optimal route.
+        """
         locations = [
-            Location(0, 0),
-            Location(0, 1),
-            Location(1, 0),
-            Location(1, 1)
+            Location(0, 0),    # Start
+            Location(0, 2),    # North
+            Location(2, 0),    # East
+            Location(3, 3)     # Northeast but farther so NN won't take it
         ]
         
         optimizer = RouteOptimizer(
             locations,
-            start_time=self.start_time,
             strategy=NearestNeighborStrategy()
         )
-        _, _, nn_distance = optimizer.find_route()
+        _, nn_distance = optimizer.find_route()
         
         optimizer.set_strategy(TwoOptStrategy(NearestNeighborStrategy()))
-        _, _, two_opt_distance = optimizer.find_route()
+        _, two_opt_distance = optimizer.find_route()
         
-        self.assertLessEqual(two_opt_distance, nn_distance)
+        # 2-opt should find a better route here
+        self.assertLess(two_opt_distance, nn_distance)
+
+    def test_empty_locations(self):
+        """
+        Test that an empty location list is properly rejected.
+        """
+        with self.assertRaises(ValueError):
+            RouteOptimizer([])
 
 if __name__ == '__main__':
     unittest.main()
